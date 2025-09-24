@@ -1,0 +1,152 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Pipeline Infrastructure
+
+Parameters:
+  VPCStackName:
+    Type: String
+    Description: Name of the VPC stack
+  ECSStackName:
+    Type: String
+    Description: Name of the ECS stack
+  ECRRepoName:
+    Type: String
+    Default: "pexelhub-ecr"
+    Description: Name of ERC repository
+
+Resources:
+  # IAM Role for CodePipeline
+  CodePipelineServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codepipeline.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: CodePipelinePolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:*
+                  - ecs:*
+                  - codedeploy:*
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - ecr:DescribeImages
+                Resource: !Sub arn:aws:ecr:${AWS::Region}:${AWS::AccountId}:repository/${ECRRepoName}
+              - Effect: Allow
+                Action:
+                  - iam:PassRole
+                Resource:
+                  Fn::ImportValue: !Sub ${VPCStackName}-ECSExecutionRoleArn
+              - Effect: Allow
+                Action:
+                  - iam:PassRole
+                Resource:
+                  Fn::ImportValue: !Sub ${VPCStackName}-ECSTaskRoleArn
+
+  # CodePipeline for Blue/Green Deployment
+  CodePipeline:
+    Type: AWS::CodePipeline::Pipeline
+    Properties:
+      Name: JavaAppDeploymentPipeline
+      RoleArn: !GetAtt CodePipelineServiceRole.Arn
+      ArtifactStore:
+        Type: S3
+        Location:
+          Fn::ImportValue: !Sub ${VPCStackName}-ArtifactBucketName
+      Stages:
+        - Name: Source
+          Actions:
+            - Name: S3-Source
+              ActionTypeId:
+                Category: Source
+                Owner: AWS
+                Version: 1
+                Provider: S3
+              Configuration:
+                S3Bucket:
+                  Fn::ImportValue: !Sub ${VPCStackName}-ArtifactBucketName
+                S3ObjectKey: "deployment-files.zip"
+                PollForSourceChanges: false
+              OutputArtifacts:
+                - Name: SourceArtifact
+              RunOrder: 1
+        - Name: Deploy
+          Actions:
+            - Name: DeployToECS
+              ActionTypeId:
+                Category: Deploy
+                Owner: AWS
+                Version: 1
+                Provider: CodeDeployToECS
+              Configuration:
+                ApplicationName:
+                  Fn::ImportValue: !Sub ${ECSStackName}-CodeDeployApplicationName
+                DeploymentGroupName:
+                  Fn::ImportValue: !Sub ${ECSStackName}-CodeDeployDeploymentGroupName
+                TaskDefinitionTemplateArtifact: SourceArtifact
+                TaskDefinitionTemplatePath: taskdef.json
+                AppSpecTemplateArtifact: SourceArtifact
+                AppSpecTemplatePath: appspec.yml
+              InputArtifacts:
+                - Name: SourceArtifact
+              RunOrder: 1
+
+  # IAM Role for EventBridge
+  EventBridgeRole:
+    Type: AWS::IAM::Role
+    DependsOn: CodePipeline
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: events.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: StartPipelineExecution
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: codepipeline:StartPipelineExecution
+                Resource: !Sub arn:aws:codepipeline:${AWS::Region}:${AWS::AccountId}:${CodePipeline}
+
+  # EventBridge Rule for ECR image push
+  ECRImagePushRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: Rule to trigger CodePipeline when a new image is pushed to ECR
+      EventPattern:
+        source:
+          - aws.ecr
+        detail-type:
+          - ECR Image Action
+        detail:
+          action-type:
+            - PUSH
+          result:
+            - SUCCESS
+          repository-name:
+            - !Ref ECRRepoName
+          image-tag:
+            - latest
+      Targets:
+        - Arn: !Sub arn:aws:codepipeline:${AWS::Region}:${AWS::AccountId}:${CodePipeline}
+          Id: CodePipelineTarget
+          RoleArn: !GetAtt EventBridgeRole.Arn
+
+Outputs:
+  CodePipelineName:
+    Description: CodePipeline Name
+    Value: !Ref CodePipeline
+    Export:
+      Name: !Sub ${AWS::StackName}-CodePipelineName

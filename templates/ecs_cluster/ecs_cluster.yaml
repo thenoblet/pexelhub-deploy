@@ -1,0 +1,295 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: ECS Infrastructure
+
+Parameters:
+  VPCStackName:
+    Type: String
+    Description: Name of the VPC stack
+
+Resources:
+  # Application Load Balancer
+  ApplicationLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: PexelHubALB
+      Scheme: internet-facing
+      Subnets:
+        - Fn::ImportValue: !Sub ${VPCStackName}-PublicSubnetAId
+        - Fn::ImportValue: !Sub ${VPCStackName}-PublicSubnetBId
+      SecurityGroups:
+        - Fn::ImportValue: !Sub ${VPCStackName}-ALBSecurityGroupId
+      Type: application
+
+  # ALB Target Group
+  ALBTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    DependsOn: ApplicationLoadBalancer
+    Properties:
+      Name: PexelHubTargetGroup
+      Port: 8080
+      Protocol: HTTP
+      TargetType: ip
+      VpcId:
+        Fn::ImportValue: !Sub ${VPCStackName}-VPCId
+      HealthCheckPath: /actuator/health
+      HealthCheckIntervalSeconds: 30
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 2
+      Matcher:
+        HttpCode: "200"
+
+  # ALB Listener
+  ALBListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    DependsOn: ALBTargetGroup
+    Properties:
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref ALBTargetGroup
+      LoadBalancerArn: !Ref ApplicationLoadBalancer
+      Port: 80
+      Protocol: HTTP
+
+  # ECS Cluster
+  ECSCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: PexelHubCluster
+      CapacityProviders:
+        - FARGATE
+        - FARGATE_SPOT
+      DefaultCapacityProviderStrategy:
+        - CapacityProvider: FARGATE
+          Weight: 1
+
+  # ECS Task Definition
+  ECSTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: pexelhub
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      Cpu: 256
+      Memory: 512
+      ExecutionRoleArn:
+        Fn::ImportValue: !Sub ${VPCStackName}-ECSExecutionRoleArn
+      TaskRoleArn:
+        Fn::ImportValue: !Sub ${VPCStackName}-ECSTaskRoleArn
+      ContainerDefinitions:
+        - Name: pexelhub-app-container
+          Image:
+            Fn::ImportValue: !Sub ${VPCStackName}-ECRRepositoryURI
+          PortMappings:
+            - ContainerPort: 8080
+              Protocol: tcp
+          Essential: true
+          HealthCheck:
+            Command:
+              [
+                "CMD-SHELL",
+                "curl -f http://localhost:8080/actuator/health || exit 1",
+              ]
+            Interval: 30
+            Timeout: 10
+            Retries: 3
+            StartPeriod: 120
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref CloudWatchLogsGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: ecs
+          Environment:
+            - Name: DB_HOST
+              Value:
+                Fn::ImportValue: !Sub ${VPCStackName}-RdsEndpoint
+            - Name: DB_PORT
+              Value: 5432
+            - Name: AWS_S3_BUCKET
+              Value:
+                Fn::ImportValue: !Sub ${VPCStackName}-PhotoBucketName
+          Secrets:
+            - Name: DB_USERNAME
+              ValueFrom: !Sub
+                - "${SecretArn}:username::"
+                - SecretArn:
+                    Fn::ImportValue: !Sub ${VPCStackName}-RdsMasterSecretArn
+            - Name: DB_PASSWORD
+              ValueFrom: !Sub
+                - "${SecretArn}:password::"
+                - SecretArn:
+                    Fn::ImportValue: !Sub ${VPCStackName}-RdsMasterSecretArn
+
+  # ECS Service
+  ECSService:
+    Type: AWS::ECS::Service
+    Properties:
+      ServiceName: pexelhub-service
+      Cluster: !Ref ECSCluster
+      TaskDefinition: !Ref ECSTaskDefinition
+      DesiredCount: 1
+      LaunchType: FARGATE
+      DeploymentController:
+        Type: CODE_DEPLOY
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: DISABLED
+          SecurityGroups:
+            - Fn::ImportValue: !Sub ${VPCStackName}-ECSSecurityGroupId
+          Subnets:
+            - Fn::ImportValue: !Sub ${VPCStackName}-PrivateSubnet1Id
+            - Fn::ImportValue: !Sub ${VPCStackName}-PrivateSubnet2Id
+      LoadBalancers:
+        - ContainerName: pexelhub
+          ContainerPort: 8080
+          TargetGroupArn: !Ref ALBTargetGroup
+
+  # CloudWatch Logs Group
+  CloudWatchLogsGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /ecs/pexelhub
+      RetentionInDays: 30
+
+  # CodeDeploy Application
+  CodeDeployApplication:
+    Type: AWS::CodeDeploy::Application
+    Properties:
+      ApplicationName: PexelHubCodeDeploy
+      ComputePlatform: ECS
+
+  # CodeDeploy Deployment Group
+  CodeDeployDeploymentGroup:
+    Type: AWS::CodeDeploy::DeploymentGroup
+    DependsOn: ECSService
+    Properties:
+      ApplicationName: !Ref CodeDeployApplication
+      DeploymentGroupName: PexelHubDeploymentGroup
+      ServiceRoleArn:
+        Fn::ImportValue: !Sub ${VPCStackName}-CodeDeployServiceRoleArn
+      DeploymentConfigName: CodeDeployDefault.ECSAllAtOnce
+      DeploymentStyle:
+        DeploymentType: BLUE_GREEN
+        DeploymentOption: WITH_TRAFFIC_CONTROL
+      BlueGreenDeploymentConfiguration:
+        TerminateBlueInstancesOnDeploymentSuccess:
+          Action: TERMINATE
+          TerminationWaitTimeInMinutes: 5
+        DeploymentReadyOption:
+          ActionOnTimeout: CONTINUE_DEPLOYMENT
+      ECSServices:
+        - ClusterName: !Ref ECSCluster
+          ServiceName: !GetAtt ECSService.Name
+      LoadBalancerInfo:
+        TargetGroupPairInfoList:
+          - TargetGroups:
+              - Name: !GetAtt ALBTargetGroup.TargetGroupName
+              - Name: !GetAtt ALBGreenTargetGroup.TargetGroupName
+            ProdTrafficRoute:
+              ListenerArns:
+                - !Ref ALBListener
+            TestTrafficRoute:
+              ListenerArns:
+                - !Ref ALBTestListener
+
+  # Green Target Group for Blue/Green Deployment
+  ALBGreenTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: PexelHubGreenTargetGroup
+      Port: 8080
+      Protocol: HTTP
+      TargetType: ip
+      VpcId:
+        Fn::ImportValue: !Sub ${VPCStackName}-VPCId
+      HealthCheckPath: /actuator/health
+      HealthCheckIntervalSeconds: 30
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 2
+      Matcher:
+        HttpCode: "200"
+
+  # Test Listener for Blue/Green Deployment
+  ALBTestListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref ALBGreenTargetGroup
+      LoadBalancerArn: !Ref ApplicationLoadBalancer
+      Port: 8081
+      Protocol: HTTP
+
+  # Application Auto Scaling Target
+  ECSServiceAutoScalingTarget:
+    Type: AWS::ApplicationAutoScaling::ScalableTarget
+    DependsOn: ECSService
+    Properties:
+      MaxCapacity: 4
+      MinCapacity: 1
+      ResourceId: !Sub service/${ECSCluster}/${ECSService.Name}
+      RoleARN:
+        Fn::ImportValue: !Sub ${VPCStackName}-AutoScalingRoleArn
+      ScalableDimension: ecs:service:DesiredCount
+      ServiceNamespace: ecs
+
+  # Auto Scaling Policy
+  ECSServiceScalingPolicy:
+    Type: AWS::ApplicationAutoScaling::ScalingPolicy
+    Properties:
+      PolicyName: CPUScalingPolicy
+      PolicyType: TargetTrackingScaling
+      ScalingTargetId: !Ref ECSServiceAutoScalingTarget
+      TargetTrackingScalingPolicyConfiguration:
+        TargetValue: 50.0
+        ScaleOutCooldown: 300
+        ScaleInCooldown: 300
+        PredefinedMetricSpecification:
+          PredefinedMetricType: ECSServiceAverageCPUUtilization
+
+Outputs:
+  ALBEndpoint:
+    Description: ALB endpoint URL
+    Value: !GetAtt ApplicationLoadBalancer.DNSName
+    Export:
+      Name: !Sub ${AWS::StackName}-ALBEndpoint
+
+  ECSClusterName:
+    Description: ECS Cluster Name
+    Value: !Ref ECSCluster
+    Export:
+      Name: !Sub ${AWS::StackName}-ECSClusterName
+
+  ECSServiceName:
+    Description: ECS Service Name
+    Value: !Ref ECSService
+    Export:
+      Name: !Sub ${AWS::StackName}-ECSServiceName
+
+  CodeDeployApplicationName:
+    Description: CodeDeploy Application Name
+    Value: !Ref CodeDeployApplication
+    Export:
+      Name: !Sub ${AWS::StackName}-CodeDeployApplicationName
+
+  CodeDeployDeploymentGroupName:
+    Description: CodeDeploy Deployment Group Name
+    Value: !Ref CodeDeployDeploymentGroup
+    Export:
+      Name: !Sub ${AWS::StackName}-CodeDeployDeploymentGroupName
+
+  ALBTargetGroupName:
+    Description: ALB Target Group Name
+    Value: !GetAtt ALBTargetGroup.TargetGroupName
+    Export:
+      Name: !Sub ${AWS::StackName}-ALBTargetGroupName
+
+  ALBGreenTargetGroupName:
+    Description: ALB Green Target Group Name
+    Value: !GetAtt ALBGreenTargetGroup.TargetGroupName
+    Export:
+      Name: !Sub ${AWS::StackName}-ALBGreenTargetGroupName
+
