@@ -1,0 +1,3 @@
+template-file-path: templates/pipeline/pipeline.yaml
+parameters: {}
+tags: {}
