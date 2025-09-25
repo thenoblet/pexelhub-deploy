@@ -6,6 +6,10 @@ Parameters:
     Type: String
     Default: "PH-BASE-STK"
     Description: Name of the VPC stack
+  ContainerName:
+    Type: String
+    Default: "pexelhub-app-container"
+    Description: Name of container
 
 Resources:
   # Application Load Balancer
@@ -143,7 +147,7 @@ Resources:
             - Fn::ImportValue: !Sub ${VPCStackName}-PrivateSubnetAId
             - Fn::ImportValue: !Sub ${VPCStackName}-PrivateSubnetBId
       LoadBalancers:
-        - ContainerName: pexelhub-app-container
+        - ContainerName: !Ref ContainerName
           ContainerPort: 8080
           TargetGroupArn: !Ref ALBTargetGroup
 
