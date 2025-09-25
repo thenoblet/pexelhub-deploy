@@ -94,9 +94,9 @@ Resources:
                 DeploymentGroupName:
                   Fn::ImportValue: !Sub ${ECSStackName}-CodeDeployDeploymentGroupName
                 TaskDefinitionTemplateArtifact: SourceArtifact
-                TaskDefinitionTemplatePath: taskdef.json
+                TaskDefinitionTemplatePath: "taskdef.json"
                 AppSpecTemplateArtifact: SourceArtifact
-                AppSpecTemplatePath: appspec.yml
+                AppSpecTemplatePath: "appspec.yml"
               InputArtifacts:
                 - Name: SourceArtifact
               RunOrder: 1
