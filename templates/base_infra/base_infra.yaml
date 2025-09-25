@@ -438,7 +438,7 @@ Resources:
   GitHubOIDCRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: GitHubOIDCRole
+      RoleName: GitHubOidcRole
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
         Statement:
