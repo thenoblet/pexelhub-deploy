@@ -4,9 +4,11 @@ Description: Pipeline Infrastructure
 Parameters:
   VPCStackName:
     Type: String
+    Default: "PH-BASE-STK"
     Description: Name of the VPC stack
   ECSStackName:
     Type: String
+    Default: "PH-ECS-STK"
     Description: Name of the ECS stack
   ECRRepoName:
     Type: String
