@@ -140,8 +140,8 @@ Resources:
           SecurityGroups:
             - Fn::ImportValue: !Sub ${VPCStackName}-ECSSecurityGroupId
           Subnets:
-            - Fn::ImportValue: !Sub ${VPCStackName}-PrivateSubnet1Id
-            - Fn::ImportValue: !Sub ${VPCStackName}-PrivateSubnet2Id
+            - Fn::ImportValue: !Sub ${VPCStackName}-PrivateSubnetAId
+            - Fn::ImportValue: !Sub ${VPCStackName}-PrivateSubnetBId
       LoadBalancers:
         - ContainerName: pexelhub
           ContainerPort: 8080
