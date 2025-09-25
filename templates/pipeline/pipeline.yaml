@@ -96,7 +96,7 @@ Resources:
                 TaskDefinitionTemplateArtifact: SourceArtifact
                 TaskDefinitionTemplatePath: "taskdef.json"
                 AppSpecTemplateArtifact: SourceArtifact
-                AppSpecTemplatePath: "appspec.yml"
+                AppSpecTemplatePath: "appspec.yaml"
               InputArtifacts:
                 - Name: SourceArtifact
               RunOrder: 1
