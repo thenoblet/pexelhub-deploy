@@ -438,7 +438,6 @@ Resources:
   GitHubOIDCRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: GitHubOIDCRole
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
         Statement:
