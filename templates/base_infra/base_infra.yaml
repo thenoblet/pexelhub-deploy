@@ -4,9 +4,11 @@ Description: VPC, IAM Roles, and ECR Repository
 Parameters:
   GitHubOrg:
     Type: String
+    Default: "thenoblet"
     Description: GitHub organization name
   GitHubRepo:
     Type: String
+    Default: "pexelhub"
     Description: GitHub repository name
   ECRRepoName:
     Type: String
