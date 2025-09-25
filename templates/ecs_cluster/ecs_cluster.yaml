@@ -117,15 +117,11 @@ Resources:
                 Fn::ImportValue: !Sub ${VPCStackName}-PhotoBucketName
           Secrets:
             - Name: DB_USERNAME
-              ValueFrom: !Sub
-                - "${SecretArn}:username::"
-                - SecretArn:
-                    Fn::ImportValue: !Sub ${VPCStackName}-RdsMasterSecretArn
+              ValueFrom: !ImportValue
+                Fn::Sub: ${VPCStackName}-RdsUsernameSecretArn
             - Name: DB_PASSWORD
-              ValueFrom: !Sub
-                - "${SecretArn}:password::"
-                - SecretArn:
-                    Fn::ImportValue: !Sub ${VPCStackName}-RdsMasterSecretArn
+              ValueFrom: !ImportValue
+                Fn::Sub: ${VPCStackName}-RdsPasswordSecretArn
 
   # ECS Service
   ECSService:
@@ -147,7 +143,7 @@ Resources:
             - Fn::ImportValue: !Sub ${VPCStackName}-PrivateSubnetAId
             - Fn::ImportValue: !Sub ${VPCStackName}-PrivateSubnetBId
       LoadBalancers:
-        - ContainerName: !Ref ContainerName
+        - ContainerName: !Ref Con
           ContainerPort: 8080
           TargetGroupArn: !Ref ALBTargetGroup
 

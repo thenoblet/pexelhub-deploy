@@ -328,6 +328,20 @@ Resources:
         ExcludeCharacters: '"@/\'
         PasswordLength: 16
 
+  RdsUsernameSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: pexelhub-db-username
+      Description: Username for RDS DB
+      SecretString: !Sub "{{resolve:secretsmanager:${RdsMasterSecret}::username}}"
+
+  RdsPasswordSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: pexelhub-db-password
+      Description: Password for RDS DB
+      SecretString: !Sub "{{resolve:secretsmanager:${RdsMasterSecret}::password}}"
+
   RdsInstance:
     Type: AWS::RDS::DBInstance
     Properties:
@@ -393,7 +407,10 @@ Resources:
               - Effect: Allow
                 Action:
                   - "secretsmanager:GetSecretValue"
-                Resource: !Ref RdsMasterSecret
+                Resource:
+                  - !Ref RdsMasterSecret
+                  - !Ref RdsUsernameSecret
+                  - !Ref RdsPasswordSecret
 
   # IAM Role for ECS Tasks
   ECSTaskRole:
@@ -592,3 +609,15 @@ Outputs:
     Description: "RDS PostgreSQL endpoint"
     Export:
       Name: !Sub ${AWS::StackName}-RdsEndpoint
+
+  RdsUsernameSecretArn:
+    Value: !Ref RdsUsernameSecret
+    Description: "ARN of Secrets Manager secret for DB username"
+    Export:
+      Name: !Sub ${AWS::StackName}-RdsUsernameSecretArn
+
+  RdsPasswordSecretArn:
+    Value: !Ref RdsPasswordSecret
+    Description: "ARN of Secrets Manager secret for DB password"
+    Export:
+      Name: !Sub ${AWS::StackName}-RdsPasswordSecretArn
