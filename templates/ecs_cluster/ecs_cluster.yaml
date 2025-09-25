@@ -4,6 +4,7 @@ Description: ECS Infrastructure
 Parameters:
   VPCStackName:
     Type: String
+    Default: "PH-BASE-STK"
     Description: Name of the VPC stack
 
 Resources:
@@ -292,4 +293,3 @@ Outputs:
     Value: !GetAtt ALBGreenTargetGroup.TargetGroupName
     Export:
       Name: !Sub ${AWS::StackName}-ALBGreenTargetGroupName
-
