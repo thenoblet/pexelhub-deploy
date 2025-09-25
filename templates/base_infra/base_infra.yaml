@@ -444,7 +444,7 @@ Resources:
           - Effect: Allow
             Principal:
               Federated: !Ref GitHubOIDCProvider
-              Action: sts:AssumeRoleWithWebIdentity
+            Action: sts:AssumeRoleWithWebIdentity
             Condition:
               StringEquals:
                 token.actions.githubusercontent.com:aud: sts.amazonaws.com
