@@ -101,7 +101,7 @@ Resources:
       TaskRoleArn:
         Fn::ImportValue: !Sub ${VPCStackName}-ECSTaskRoleArn
       ContainerDefinitions:
-        - Name: pexelhub-app-container
+        - Name: !Ref ContainerName
           Image:
             Fn::ImportValue: !Sub ${VPCStackName}-ECRRepositoryURI
           PortMappings:
@@ -161,7 +161,7 @@ Resources:
             - Fn::ImportValue: !Sub ${VPCStackName}-PrivateSubnetAId
             - Fn::ImportValue: !Sub ${VPCStackName}-PrivateSubnetBId
       LoadBalancers:
-        - ContainerName: "pexelhub-app-container"
+        - ContainerName: !Ref ContainerName
           ContainerPort: 8080
           TargetGroupArn: !Ref ALBBlueTargetGroup
 
