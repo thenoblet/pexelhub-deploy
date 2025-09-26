@@ -26,11 +26,29 @@ Resources:
       Type: application
 
   # ALB Target Group
-  ALBTargetGroup:
+  ALBBlueTargetGroup:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
     DependsOn: ApplicationLoadBalancer
     Properties:
-      Name: PexelHubTargetGroup
+      Name: PexelHubBlueTargetGroup
+      Port: 8080
+      Protocol: HTTP
+      TargetType: ip
+      VpcId:
+        Fn::ImportValue: !Sub ${VPCStackName}-VPCId
+      HealthCheckPath: /actuator/health
+      HealthCheckIntervalSeconds: 30
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 2
+      Matcher:
+        HttpCode: "200"
+
+  # Green Target Group for Blue/Green Deployment
+  ALBGreenTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: PexelHubGreenTargetGroup
       Port: 8080
       Protocol: HTTP
       TargetType: ip
@@ -47,11 +65,11 @@ Resources:
   # ALB Listener
   ALBListener:
     Type: AWS::ElasticLoadBalancingV2::Listener
-    DependsOn: ALBTargetGroup
+    DependsOn: ALBBlueTargetGroup
     Properties:
       DefaultActions:
         - Type: forward
-          TargetGroupArn: !Ref ALBTargetGroup
+          TargetGroupArn: !Ref ALBBlueTargetGroup
       LoadBalancerArn: !Ref ApplicationLoadBalancer
       Port: 80
       Protocol: HTTP
@@ -145,7 +163,7 @@ Resources:
       LoadBalancers:
         - ContainerName: !Ref ContainerName
           ContainerPort: 8080
-          TargetGroupArn: !Ref ALBTargetGroup
+          TargetGroupArn: !Ref ALBBlueTargetGroup
 
   # CloudWatch Logs Group
   CloudWatchLogsGroup:
@@ -186,7 +204,7 @@ Resources:
       LoadBalancerInfo:
         TargetGroupPairInfoList:
           - TargetGroups:
-              - Name: !GetAtt ALBTargetGroup.TargetGroupName
+              - Name: !GetAtt ALBBlueTargetGroup.TargetGroupName
               - Name: !GetAtt ALBGreenTargetGroup.TargetGroupName
             ProdTrafficRoute:
               ListenerArns:
@@ -194,24 +212,6 @@ Resources:
             TestTrafficRoute:
               ListenerArns:
                 - !Ref ALBTestListener
-
-  # Green Target Group for Blue/Green Deployment
-  ALBGreenTargetGroup:
-    Type: AWS::ElasticLoadBalancingV2::TargetGroup
-    Properties:
-      Name: PexelHubGreenTargetGroup
-      Port: 8080
-      Protocol: HTTP
-      TargetType: ip
-      VpcId:
-        Fn::ImportValue: !Sub ${VPCStackName}-VPCId
-      HealthCheckPath: /actuator/health
-      HealthCheckIntervalSeconds: 30
-      HealthCheckTimeoutSeconds: 5
-      HealthyThresholdCount: 2
-      UnhealthyThresholdCount: 2
-      Matcher:
-        HttpCode: "200"
 
   # Test Listener for Blue/Green Deployment
   ALBTestListener:
@@ -282,11 +282,11 @@ Outputs:
     Export:
       Name: !Sub ${AWS::StackName}-CodeDeployDeploymentGroupName
 
-  ALBTargetGroupName:
+  ALBBlueTargetGroupName:
     Description: ALB Target Group Name
-    Value: !GetAtt ALBTargetGroup.TargetGroupName
+    Value: !GetAtt ALBBlueTargetGroup.TargetGroupName
     Export:
-      Name: !Sub ${AWS::StackName}-ALBTargetGroupName
+      Name: !Sub ${AWS::StackName}-ALBBlueTargetGroupName
 
   ALBGreenTargetGroupName:
     Description: ALB Green Target Group Name
